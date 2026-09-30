@@ -69,7 +69,7 @@ class Session:
         names = (
             ["cpu_total"]
             + [f"cpu_{index}" for index in range(cpu_count)]
-            + ["memory", "swap", "gpu_util", "vram"]
+            + ["memory", "swap", "gpu_util", "vram", "gpu_temp"]
         )
         self.stats = {name: _Stats() for name in names}
         self.write()
@@ -88,9 +88,11 @@ class Session:
         if sample.gpu is None:
             self.stats["gpu_util"].add(None)
             self.stats["vram"].add(None)
+            self.stats["gpu_temp"].add(None)
         else:
             self.stats["gpu_util"].add(sample.gpu.util)
             self.stats["vram"].add(sample.gpu.vram_percent)
+            self.stats["gpu_temp"].add(sample.gpu.temp_c)
         self.write()
 
     def stop(self) -> None:

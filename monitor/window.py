@@ -111,13 +111,13 @@ def _xy(history: Sequence[float]) -> tuple[list[int], list[float]]:
     return xs, values
 
 
-def _make_plot(title: str) -> pg.PlotWidget:
+def _make_plot(title: str, unit: str = "%", y_max: float = 100) -> pg.PlotWidget:
     plot = pg.PlotWidget()
     plot.setTitle(title)
     plot.setLabel("bottom", "秒")
-    plot.setLabel("left", "%")
+    plot.setLabel("left", unit)
     plot.showGrid(x=True, y=True, alpha=0.25)
-    plot.setYRange(0, 100, padding=0)
+    plot.setYRange(0, y_max, padding=0)
     plot.setXRange(-(HISTORY - 1), 0, padding=0)
     plot.setMouseEnabled(x=False, y=False)
     plot.hideButtons()
@@ -130,8 +130,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         _apply_cjk_font()
         self.setWindowTitle("资源监视器")
-        self.resize(1200, 860)
-        self.setMinimumSize(1000, 720)
+        self.resize(1400, 860)
+        self.setMinimumSize(1180, 720)
         self.setStyleSheet(_STYLESHEET)
 
         self.sampler = Sampler()
@@ -142,6 +142,7 @@ class MainWindow(QMainWindow):
         self.swap_hist: list[float] = []
         self.gpu_hist: list[float] = []
         self.vram_hist: list[float] = []
+        self.gpu_temp_hist: list[float] = []
 
         self._build_ui()
 
@@ -166,12 +167,14 @@ class MainWindow(QMainWindow):
         self.swap_label = self._metric_label("交换  --")
         self.gpu_label = self._metric_label("GPU  --")
         self.vram_label = self._metric_label("显存  --")
+        self.gpu_temp_label = self._metric_label("GPU温度  --")
         for label in (
             self.cpu_label,
             self.mem_label,
             self.swap_label,
             self.gpu_label,
             self.vram_label,
+            self.gpu_temp_label,
         ):
             bar_layout.addWidget(label)
         bar_layout.addStretch(1)
@@ -221,11 +224,19 @@ class MainWindow(QMainWindow):
         self.swap_plot = _make_plot("交换分区")
         self.gpu_plot = _make_plot("GPU 占用")
         self.vram_plot = _make_plot("显存")
+        self.gpu_temp_plot = _make_plot("GPU 核心温度", unit="°C", y_max=110)
         self.mem_curve = self.mem_plot.plot(pen=pg.mkPen("#81c784", width=2))
         self.swap_curve = self.swap_plot.plot(pen=pg.mkPen("#ffb74d", width=2))
         self.gpu_curve = self.gpu_plot.plot(pen=pg.mkPen("#ce93d8", width=2))
         self.vram_curve = self.vram_plot.plot(pen=pg.mkPen("#f48fb1", width=2))
-        for plot in (self.mem_plot, self.swap_plot, self.gpu_plot, self.vram_plot):
+        self.gpu_temp_curve = self.gpu_temp_plot.plot(pen=pg.mkPen("#ff7043", width=2))
+        for plot in (
+            self.mem_plot,
+            self.swap_plot,
+            self.gpu_plot,
+            self.vram_plot,
+            self.gpu_temp_plot,
+        ):
             bottom.addWidget(plot, stretch=1)
         root.addLayout(bottom, stretch=2)
 
@@ -261,16 +272,23 @@ class MainWindow(QMainWindow):
         if sample.gpu is None:
             self.gpu_label.setText("GPU  不可用")
             self.vram_label.setText("显存  不可用")
+            self.gpu_temp_label.setText("GPU温度  不可用")
             self.gpu_plot.setTitle("GPU 占用（不可用）")
             self.vram_plot.setTitle("显存（不可用）")
+            self.gpu_temp_plot.setTitle("GPU 核心温度（不可用）")
         else:
             self.gpu_label.setText(f"GPU  {sample.gpu.util:.1f}%")
             self.vram_label.setText(
                 f"显存  {sample.gpu.vram_used_mib:.0f} / {sample.gpu.vram_total_mib:.0f} MiB"
                 f" ({sample.gpu.vram_percent:.1f}%)"
             )
+            if sample.gpu.temp_c is None:
+                self.gpu_temp_label.setText("GPU温度  --")
+            else:
+                self.gpu_temp_label.setText(f"GPU温度  {sample.gpu.temp_c:.0f}°C")
             self.gpu_plot.setTitle("GPU 占用")
             self.vram_plot.setTitle("显存")
+            self.gpu_temp_plot.setTitle("GPU 核心温度")
         for index, value in enumerate(sample.cpu_per):
             if index < len(self.cpu_labels):
                 self.cpu_labels[index].setText(f"CPU{index:<2d} {value:5.1f}%")
@@ -287,12 +305,18 @@ class MainWindow(QMainWindow):
         _push(self.swap_hist, sample.swap_percent)
         gpu_util = float("nan") if sample.gpu is None else sample.gpu.util
         vram = float("nan") if sample.gpu is None else sample.gpu.vram_percent
+        if sample.gpu is None or sample.gpu.temp_c is None:
+            gpu_temp = float("nan")
+        else:
+            gpu_temp = sample.gpu.temp_c
         _push(self.gpu_hist, gpu_util)
         _push(self.vram_hist, vram)
+        _push(self.gpu_temp_hist, gpu_temp)
         self.mem_curve.setData(*_xy(self.memory_hist))
         self.swap_curve.setData(*_xy(self.swap_hist))
         self.gpu_curve.setData(*_xy(self.gpu_hist))
         self.vram_curve.setData(*_xy(self.vram_hist))
+        self.gpu_temp_curve.setData(*_xy(self.gpu_temp_hist))
 
     def _toggle_log(self) -> None:
         if self.session is not None and self.session.active:

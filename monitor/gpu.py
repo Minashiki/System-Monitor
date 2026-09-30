@@ -1,4 +1,4 @@
-"""NVIDIA GPU utilization and VRAM via NVML."""
+"""NVIDIA GPU utilization, VRAM, and core temperature via NVML."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ class GpuSample:
     vram_percent: float
     vram_used_mib: float
     vram_total_mib: float
+    temp_c: float | None
 
 
 class GpuReader:
@@ -64,6 +65,14 @@ class GpuReader:
             mem = self._nvml.nvmlDeviceGetMemoryInfo(self._handle)
         except Exception:
             return None
+        temp_c = None
+        try:
+            raw_temp = self._nvml.nvmlDeviceGetTemperature(
+                self._handle, self._nvml.NVML_TEMPERATURE_GPU
+            )
+            temp_c = float(raw_temp)
+        except Exception:
+            temp_c = None
         total = float(mem.total)
         used = float(mem.used)
         percent = (used / total * 100.0) if total else 0.0
@@ -74,4 +83,5 @@ class GpuReader:
             vram_percent=percent,
             vram_used_mib=used / mib,
             vram_total_mib=total / mib,
+            temp_c=temp_c,
         )
